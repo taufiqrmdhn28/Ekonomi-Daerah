@@ -9,12 +9,12 @@ import os
 st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="📍")
 
 # ==============================================================================
-# Bagian 1: SMART DATA LOADER (Auto-Detect CSV / Excel & Multi-Separator)
+# Bagian 1: SMART DATA LOADER (Prioritas Utama: File Excel .xlsx)
 # ==============================================================================
 @st.cache_data
 def smart_load(filename_base):
-    """Mencari file baik dalam format .csv maupun .xlsx di folder root maupun folder 'data'"""
-    formats = ['.csv', '.xlsx']
+    """Mencari file dengan prioritas .xlsx, kemudian fallback ke .csv"""
+    formats = ['.xlsx', '.csv']
     folders = ['', 'data/']
     
     for fldr in folders:
@@ -22,25 +22,26 @@ def smart_load(filename_base):
             path = f"{fldr}{filename_base}{fmt}"
             if os.path.exists(path):
                 try:
-                    if fmt == '.csv':
+                    if fmt == '.xlsx':
+                        # Eksekusi prioritas untuk Excel
+                        df = pd.read_excel(path, engine='openpyxl')
+                    else:
+                        # Fallback jika masih memakai CSV
                         try:
-                            # Percobaan 1: Separator Titik Koma
                             df = pd.read_csv(path, sep=";", engine='python')
                             if len(df.columns) < 2: 
-                                # Percobaan 2: Separator Koma
                                 df = pd.read_csv(path, sep=",", engine='python')
                         except:
                             df = pd.read_csv(path, sep=",", engine='python')
-                    else:
-                        df = pd.read_excel(path)
                     
-                    # Bersihkan nama kolom dari spasi/huruf besar
+                    # Bersihkan nama kolom (hilangkan spasi berlebih dan jadikan huruf kecil)
                     df.columns = df.columns.astype(str).str.strip().str.lower()
                     return df
                 except Exception as e:
                     st.error(f"Gagal membaca file {path}: {e}")
                     return pd.DataFrame()
-    return pd.DataFrame() # Jika tidak ketemu di semua skenario
+                    
+    return pd.DataFrame() # Return DF kosong jika file tidak ditemukan sama sekali
 
 def load_data_aman(provinsi, tahun):
     df_all = smart_load("data_ekonomi")
@@ -51,6 +52,7 @@ def load_data_aman(provinsi, tahun):
         df_all['provinsi'] = df_all['provinsi'].astype(str).str.strip()
         df_all['tahun'] = pd.to_numeric(df_all['tahun'], errors='coerce').fillna(0).astype(int)
         
+        # Kolom ini diamankan secara spesifik agar bisa membaca angka desimal Excel maupun teks ber-koma
         kolom_angka = [
             'lpe_tw1', 'lpe_tw2', 'lpe_tw3', 'lpe_tw4', 'lpe_ctc', 
             'kontribusi', 'pdrb_perkapita', 'inflasi', 'pma', 'pmdn', 
@@ -112,11 +114,11 @@ def buat_bar_chart_makro(df_aktif, tipe_chart):
     if tipe_chart == "Pertumbuhan Ekonomi":
         if "lpe_ctc" not in df_aktif.columns: return st.warning("Kolom lpe_ctc tidak ditemukan.")
         df_sorted = df_aktif.dropna(subset=["lpe_ctc"]).sort_values(by="lpe_ctc", ascending=True)
-        fig = px.bar(df_sorted, x="lpe_ctc", y="provinsi", orientation='h', labels={"lpe_ctc": "LPE c-to-c (%)", "provinsi": "Provinsi"}, color="lpe_ctc", color_continuous_scale="Viridis")
+        fig = px.bar(df_sorted, x="lpe_ctc", y="provinsi", labels={"lpe_ctc": "LPE c-to-c (%)", "provinsi": "Provinsi"}, color="lpe_ctc", color_continuous_scale="Viridis")
     else:
         if "kontribusi" not in df_aktif.columns: return st.warning("Kolom kontribusi tidak ditemukan.")
         df_sorted = df_aktif.dropna(subset=["kontribusi"]).sort_values(by="kontribusi", ascending=True)
-        fig = px.bar(df_sorted, x="kontribusi", y="provinsi", orientation='h', labels={"kontribusi": "Kontribusi PDRB (%)", "provinsi": "Provinsi"}, color="kontribusi", color_continuous_scale="Cividis")
+        fig = px.bar(df_sorted, x="kontribusi", y="provinsi", labels={"kontribusi": "Kontribusi PDRB (%)", "provinsi": "Provinsi"}, color="kontribusi", color_continuous_scale="Cividis")
         
     fig.update_layout(height=600, margin={"r":10,"t":10,"l":10,"b":10})
     st.plotly_chart(fig, use_container_width=True)
@@ -156,7 +158,6 @@ def buat_line_growth(provinsi):
         df_raw['provinsi'] = df_raw['provinsi'].astype(str).str.strip()
         df_prov = df_raw[df_raw['provinsi'] == provinsi].sort_values(by="tahun")
         
-        # PERBAIKAN: Harus cek empty
         if df_prov.empty:
             st.warning(f"Data tren historis untuk {provinsi} tidak ditemukan.")
             return
@@ -242,7 +243,7 @@ def buat_scatter_sektoral(df_aktif, jenis_analisis):
 # ==============================================================================
 # Bagian 3: UI DASHBOARD UTAMA
 # ==============================================================================
-st.title("🏛️ Dashboard Ekonomi Makro Daerah")
+st.title("🏛️ Dashboard Ekonomi Makro Daerah (Test Sandbox)")
 st.markdown("---")
 
 col_provinsi, col_tahun = st.columns(2)
@@ -268,7 +269,7 @@ with col_tahun:
 
 st.markdown("---")
 
-# Mengambil Data (Proses aman, tidak akan crash meskipun CSV kosong/salah)
+# Mengambil Data (Proses aman, mendukung Excel dan CSV secara dinamis)
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
