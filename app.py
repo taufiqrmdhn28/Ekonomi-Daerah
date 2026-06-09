@@ -10,10 +10,15 @@ import os
 st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="📍")
 
 # ==============================================================================
-# Bagian 0: KONFIGURASI GEMINI API KEY
+# Bagian 0: KONFIGURASI GEMINI API KEY VIA STREAMLIT SECRETS (SECURE)
 # ==============================================================================
-GEMINI_KEY = "AQ.Ab8RN6INWqpjiIYw5_s1c9hk3Q2erwvIBCVErTjynhKAYWRdQ"
-genai.configure(api_key=GEMINI_KEY)
+try:
+    USER_API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=USER_API_KEY)
+    AI_TERKONFIGURASI = True
+except Exception as e:
+    AI_TERKONFIGURASI = False
+    st.warning("Catatan: GEMINI_API_KEY belum terdeteksi di Secrets Streamlit Cloud. Fitur AI dinonaktifkan sementara.")
 
 # ==============================================================================
 # Bagian 1: SMART DATA LOADER (Prioritas Utama: File Excel .xlsx)
@@ -221,7 +226,7 @@ def buat_scatter_sektoral(df_aktif, jenis_analisis):
         labels_x, labels_y = "Rata-Rata Kontribusi (%)", "Rata-Rata Pertumbuhan (%)"
 
     if col_x not in df_aktif.columns or col_y not in df_aktif.columns:
-        return st.warning(f"Komom {col_x} atau {col_y} tidak ditemukan pada data sektoral.")
+        return st.warning(f"Kolom {col_x} atau {col_y} tidak ditemukan pada data sektoral.")
 
     st.markdown(f"##### {judul_full}", help=help_teks)
     col_grafik, col_narasi = st.columns([2, 1])
@@ -271,10 +276,12 @@ with col_tahun:
 
 st.markdown("---")
 
+# Mengambil Data (Proses aman, mendukung Excel dan CSV secara dinamis)
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
 
+# Status Indikator Load Data
 st.markdown("#### 📊 Status Pemuatan Data Monitoring")
 status_makro, status_sektoral, status_struktur = st.columns(3)
 
@@ -397,9 +404,11 @@ st.success(format_val(df_active_dict.get("rekomendasi_ekonomi_riil")))
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("#### 🧠 Tambahan Analisis Strategis Gemini AI (The Bappenas Way)")
 
-# PASTIKAN BARIS DI BAWAH INI ADA DAN TIDAK TERPOTONG:
+# Tombol pemicu pemanggilan API
 if st.button("Hasilkan Sudut Pandang Gemini AI", type="primary"):
-    if not df_active_dict:
+    if not AI_TERKONFIGURASI:
+        st.error("Gagal mengeksekusi: Hubungan API terputus. Pastikan variabel GEMINI_API_KEY sudah disimpan dengan benar di Secrets Streamlit Cloud.")
+    elif not df_active_dict:
         st.warning("Silakan pastikan data wilayah bermuatan valid terlebih dahulu sebelum memanggil AI.")
     else:
         # Menghimpun seluruh rangkuman data indikator kuantitatif sebagai basis fakta AI
@@ -419,7 +428,6 @@ if st.button("Hasilkan Sudut Pandang Gemini AI", type="primary"):
         
         with st.spinner(f"Gemini AI sedang menyusun sintesis pembangunan wilayah {provinsi_terpilih}..."):
             try:
-                # Arsitektur pemanggilan model kustom Bappenas
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 prompt_sintesis = f"""
