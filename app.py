@@ -3,10 +3,17 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import google.generativeai as genai
 import json
 import os
 
 st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="📍")
+
+# ==============================================================================
+# Bagian 0: KONFIGURASI GEMINI API KEY
+# ==============================================================================
+GEMINI_KEY = "AQ.Ab8RN6INWqpjiIYw5_s1c9hk3Q2erwvIBCVErTjynhKAYWRdQ"
+genai.configure(api_key=GEMINI_KEY)
 
 # ==============================================================================
 # Bagian 1: SMART DATA LOADER (Prioritas Utama: File Excel .xlsx)
@@ -23,10 +30,8 @@ def smart_load(filename_base):
             if os.path.exists(path):
                 try:
                     if fmt == '.xlsx':
-                        # Eksekusi prioritas untuk Excel
                         df = pd.read_excel(path, engine='openpyxl')
                     else:
-                        # Fallback CSV dengan tambahan ENCODING='latin1' anti-error byte 0x93
                         try:
                             df = pd.read_csv(path, sep=";", engine='python', encoding='latin1')
                             if len(df.columns) < 2: 
@@ -34,14 +39,60 @@ def smart_load(filename_base):
                         except:
                             df = pd.read_csv(path, sep=",", engine='python', encoding='latin1')
                     
-                    # Bersihkan nama kolom (hilangkan spasi berlebih dan jadikan huruf kecil)
                     df.columns = df.columns.astype(str).str.strip().str.lower()
                     return df
                 except Exception as e:
                     st.error(f"Gagal membaca file {path}: {e}")
                     return pd.DataFrame()
                     
-    return pd.DataFrame() # Return DF kosong jika file tidak ditemukan sama sekali
+    return pd.DataFrame()
+
+def load_data_aman(provinsi, tahun):
+    df_all = smart_load("data_ekonomi")
+    if df_all is None or df_all.empty:
+        return pd.DataFrame(columns=['provinsi', 'tahun', 'klasifikasi', 'lpe_tw1', 'lpe_tw2', 'lpe_tw3', 'lpe_tw4', 'lpe_ctc'])
+
+    try:
+        df_all['provinsi'] = df_all['provinsi'].astype(str).str.strip()
+        df_all['tahun'] = pd.to_numeric(df_all['tahun'], errors='coerce').fillna(0).astype(int)
+        
+        kolom_angka = [
+            'lpe_tw1', 'lpe_tw2', 'lpe_tw3', 'lpe_tw4', 'lpe_ctc', 
+            'kontribusi', 'pdrb_perkapita', 'inflasi', 'pma', 'pmdn', 
+            'ipm', 'kemiskinan', 'tpt', 'gini'
+        ]
+        
+        for kol in kolom_angka:
+            if kol in df_all.columns:
+                df_all[kol] = df_all[kol].astype(str).str.strip().replace(['-', '', 'nan', 'None'], np.nan)
+                df_all[kol] = df_all[kol].str.replace(',', '.', regex=False)
+                df_all[kol] = pd.to_numeric(df_all[kol], errors='coerce')
+        
+        df_filtered = df_all[df_all['tahun'] == int(tahun)]
+        return df_filtered.reset_index(drop=True) if not df_filtered.empty else pd.DataFrame(columns=df_all.columns)
+            
+    except Exception as e:
+        return pd.DataFrame(columns=['provinsi', 'tahun', 'klasifikasi', 'lpe_tw1', 'lpe_tw2', 'lpe_tw3', 'lpe_tw4', 'lpe_ctc'])
+
+def load_data_sektoral_aman(provinsi):
+    df_sektoral = smart_load("data_sektoral")
+    if df_sektoral is None or df_sektoral.empty: return pd.DataFrame()
+    try:
+        df_sektoral['provinsi'] = df_sektoral['provinsi'].astype(str).str.strip()
+        df_filtered = df_sektoral[df_sektoral['provinsi'] == str(provinsi).strip()]
+        return df_filtered.reset_index(drop=True) if not df_filtered.empty else pd.DataFrame(columns=df_sektoral.columns)
+    except:
+        return pd.DataFrame()
+
+def load_data_struktur_aman(provinsi):
+    df_all = smart_load("data_struktur")
+    if df_all is None or df_all.empty: return pd.DataFrame()
+    try:
+        df_all['provinsi'] = df_all['provinsi'].astype(str).str.strip()
+        df_filtered = df_all[df_all['provinsi'] == str(provinsi).strip()]
+        return df_filtered.reset_index(drop=True) if not df_filtered.empty else pd.DataFrame(columns=df_all.columns)
+    except:
+        return pd.DataFrame()
 
 # ==============================================================================
 # Bagian 2: VISUALISASI CHART & PETA
@@ -170,7 +221,7 @@ def buat_scatter_sektoral(df_aktif, jenis_analisis):
         labels_x, labels_y = "Rata-Rata Kontribusi (%)", "Rata-Rata Pertumbuhan (%)"
 
     if col_x not in df_aktif.columns or col_y not in df_aktif.columns:
-        return st.warning(f"Kolom {col_x} atau {col_y} tidak ditemukan pada data sektoral.")
+        return st.warning(f"Komom {col_x} atau {col_y} tidak ditemukan pada data sektoral.")
 
     st.markdown(f"##### {judul_full}", help=help_teks)
     col_grafik, col_narasi = st.columns([2, 1])
@@ -216,17 +267,14 @@ with col_provinsi:
     provinsi_terpilih = st.selectbox("Pilih Wilayah Analisis:", list_provinsi)
 
 with col_tahun:
-    # Memilih tahun secara default ke tahun terbaru (2025/2026 tergantung data yang ada)
     tahun_terpilih = st.selectbox("Tahun Analisis:", list(range(2011, 2027)), index=14)
 
 st.markdown("---")
 
-# Mengambil Data (Proses aman, mendukung Excel dan CSV secara dinamis)
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
 
-# Status Indikator Load Data
 st.markdown("#### 📊 Status Pemuatan Data Monitoring")
 status_makro, status_sektoral, status_struktur = st.columns(3)
 
@@ -334,9 +382,66 @@ buat_scatter_sektoral(df_sektoral_aktif, "Overlay")
 buat_scatter_sektoral(df_sektoral_aktif, "Shift Share")
 buat_scatter_sektoral(df_sektoral_aktif, "Tipologi Klassen")
 
+# ==========================================
+# URUTAN 4: INTERPRETASI DAN REKOMENDASI (INTEGRASI GEMINI AI)
+# ==========================================
 st.markdown("---")
 st.header("4. INTERPRETASI DAN REKOMENDASI")
-st.markdown("### Interpretasi Sisi Ekonomi")
+
+st.markdown("### Interpretasi Sisi Ekonomi (Database)")
 st.info(format_val(df_active_dict.get("interpretasi_ekonomi_riil")))
-st.markdown("### Rekomendasi Sisi Ekonomi")
+
+st.markdown("### Rekomendasi Sisi Ekonomi (Database)")
 st.success(format_val(df_active_dict.get("rekomendasi_ekonomi_riil")))
+
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("#### 🧠 Tambahan Analisis Strategis Gemini AI (The Bappenas Way)")
+
+# Tombol pemicu pemanggilan API agar hemat token dan performa stabil
+if st.button("Hasilkan Sudut Pandang Gemini AI", type="primary"):
+    if not df_active_dict:
+        st.warning("Silakan pastikan data wilayah bermuatan valid terlebih dahulu sebelum memanggil AI.")
+    else:
+        # Menghimpun seluruh rangkuman data indikator kuantitatif sebagai basis fakta AI
+        indikator_konteks = f"""
+        Wilayah Evaluasi: {provinsi_terpilih}
+        Tahun Pemantauan: {tahun_terpilih}
+        Status Kuadran Wilayah: {df_active_dict.get('klasifikasi', '-')}
+        Laju Pertumbuhan Ekonomi (c-to-c): {df_active_dict.get('lpe_ctc', '-')} %
+        Inflasi Daerah: {df_active_dict.get('inflasi', '-')} %
+        PDRB Per Kapita: {df_active_dict.get('pdrb_perkapita', '-')} Juta Rp
+        Tingkat Kemiskinan: {df_active_dict.get('kemiskinan', '-')} %
+        Tingkat Pengangguran Terbuka (TPT): {df_active_dict.get('tpt', '-')} %
+        Indeks Rasio Gini: {df_active_dict.get('gini', '-')}
+        Sektor Lapangan Kerja Utama: {df_active_dict.get('naker_top', '-')}
+        Komoditas Ekspor Andalan: {df_active_dict.get('ekspor_top3', '-')}
+        """
+        
+        with st.spinner(f"Gemini AI sedang menyusun sintesis pembangunan wilayah {provinsi_terpilih}..."):
+            try:
+                # Arsitektur pemanggilan model kustom Bappenas
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                prompt_sintesis = f"""
+                Anda adalah Perencana Pembangunan Nasional Ahli Utama di Direktorat Perencanaan Ekonomi Makro dan Pengembangan Model Pembangunan, Kementerian PPN/Bappenas.
+                
+                Tugas Anda adalah memberikan ekstra analisis strategis (*Evidence-Based Planning*) untuk melengkapi draf manual yang sudah ada. Gunakan gaya bahasa teknokratis, visioner, tegas, dan berfokus pada pemecahan akar masalah (*root cause*).
+                
+                Berikut adalah rekam data kuantitatif wilayah:
+                {indikator_konteks}
+                
+                Format dokumen output Anda wajib langsung menggunakan struktur Markdown berikut (Tanpa kalimat pembuka/basa-basi):
+                
+                ##### 🔍 Interpretasi Makro & Struktural Tambahan (Gemini AI)
+                [Tuliskan analisis mendalam minimal 2 paragraf padat mengenai tantangan struktur ekonomi, disparitas, serta produktivitas berdasarkan data di atas]
+                
+                ##### 🚀 Rekomendasi Intervensi Sektoral Wilayah (Gemini AI)
+                [Berikan minimal 3 poin rekomendasi kebijakan yang actionable, konkret, khusus ditujukan untuk karakteristik sektor wilayah tersebut]
+                """
+                
+                response = model.generate_content(prompt_sintesis)
+                st.markdown("---")
+                st.markdown(response.text)
+                st.success("✓ Analisis tambahan dari Gemini AI berhasil disintesis.")
+            except Exception as e:
+                st.error(f"Koneksi AI Terganggu: {e}")
