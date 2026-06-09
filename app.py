@@ -11,6 +11,7 @@ st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="
 # ==============================================================================
 # Bagian 1: SMART DATA LOADER (Auto-Detect CSV / Excel)
 # ==========================================
+@st.cache_data
 def smart_load(filename_base):
     """Mencari file baik dalam format .csv maupun .xlsx di folder root maupun folder 'data'"""
     formats = ['.csv', '.xlsx']
@@ -41,7 +42,7 @@ def smart_load(filename_base):
 
 def load_data_aman(provinsi, tahun):
     df_all = smart_load("data_ekonomi")
-    if df_all.empty:
+    if df_all is None or df_all.empty:
         return pd.DataFrame(columns=['provinsi', 'tahun', 'klasifikasi', 'lpe_tw1', 'lpe_tw2', 'lpe_tw3', 'lpe_tw4', 'lpe_ctc'])
 
     try:
@@ -68,7 +69,7 @@ def load_data_aman(provinsi, tahun):
 
 def load_data_sektoral_aman(provinsi):
     df_sektoral = smart_load("data_sektoral")
-    if df_sektoral.empty: return pd.DataFrame()
+    if df_sektoral is None or df_sektoral.empty: return pd.DataFrame()
     try:
         df_sektoral['provinsi'] = df_sektoral['provinsi'].astype(str).str.strip()
         df_filtered = df_sektoral[df_sektoral['provinsi'] == str(provinsi).strip()]
@@ -78,14 +79,13 @@ def load_data_sektoral_aman(provinsi):
 
 def load_data_struktur_aman(provinsi):
     df_all = smart_load("data_struktur")
-    if df_all.empty: return pd.DataFrame()
+    if df_all is None or df_all.empty: return pd.DataFrame()
     try:
         df_all['provinsi'] = df_all['provinsi'].astype(str).str.strip()
         df_filtered = df_all[df_all['provinsi'] == str(provinsi).strip()]
         return df_filtered.reset_index(drop=True) if not df_filtered.empty else pd.DataFrame(columns=df_all.columns)
     except:
         return pd.DataFrame()
-
 
 # ==============================================================================
 # Bagian 2: VISUALISASI CHART & PETA
@@ -100,10 +100,10 @@ WARNA_SEKTOR_GLOBAL = {
 }
 
 def get_warna_sektor_map(df_column):
-    return {sektor: WARNA_SEKTOR_GLOBAL.get(sektor.lower(), "#6B7280") for sektor in df_column.unique()}
+    return {sektor: WARNA_SEKTOR_GLOBAL.get(str(sektor).lower(), "#6B7280") for sektor in df_column.unique()}
 
 def buat_bar_chart_makro(df_aktif, tipe_chart):
-    if df_aktif.empty:
+    if df_aktif is None or df_aktif.empty:
         st.warning("Data makro untuk grafik batang kosong.")
         return
 
@@ -120,14 +120,15 @@ def buat_bar_chart_makro(df_aktif, tipe_chart):
     st.plotly_chart(fig, use_container_width=True)
 
 def buat_peta_klasifikasi(df_aktif):
-    if df_aktif.empty or "klasifikasi" not in df_aktif.columns:
+    if df_aktif is None or df_aktif.empty or "klasifikasi" not in df_aktif.columns:
         st.warning("Data kosong atau kolom klasifikasi tidak ditemukan, peta tidak dapat dimuat.")
         return
         
     try:
-        # Cek jika file GeoJSON tersedia
         geojson_path = "data/indonesia_provinces.geojson" if os.path.exists("data/indonesia_provinces.geojson") else "indonesia_provinces.geojson"
-        
+        if not os.path.exists(geojson_path):
+            st.info("🗺️ *[File GeoJSON batas wilayah tidak ditemukan]*")
+            return
         with open(geojson_path, "r") as f:
             geojson_indonesia = json.load(f)
             
@@ -144,15 +145,16 @@ def buat_peta_klasifikasi(df_aktif):
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, height=450)
         st.plotly_chart(fig, use_container_width=True)
     except Exception as e:
-        st.info(f"🗺️ *[Gagal memuat peta GeoJSON. Pastikan file indonesia_provinces.geojson tersedia di GitHub. Error: {e}]*")
+        st.info(f"🗺️ *[Gagal memuat peta GeoJSON. Error: {e}]*")
 
 def buat_line_growth(provinsi):
     df_raw = smart_load("data_ekonomi")
-    if df_raw.empty: return
+    if df_raw is None or df_raw.empty: return
     try:
         df_raw['provinsi'] = df_raw['provinsi'].astype(str).str.strip()
         df_prov = df_raw[df_raw['provinsi'] == provinsi].sort_values(by="tahun")
         
+        # INI PERBAIKANNYA: Wajib pakai .empty !
         if df_prov.empty:
             st.warning(f"Data tren historis untuk {provinsi} tidak ditemukan.")
             return
@@ -170,7 +172,7 @@ def buat_line_growth(provinsi):
         st.error("Gagal memuat tren pertumbuhan makro historis.")
 
 def buat_area_struktur(df_aktif):
-    if not df_aktif.empty and 'sektor' in df_aktif.columns and 'kontribusi_sektor' in df_aktif.columns:
+    if df_aktif is not None and not df_aktif.empty and 'sektor' in df_aktif.columns and 'kontribusi_sektor' in df_aktif.columns:
         df_display = df_aktif.sort_values(by="tahun")
         warna_map = get_warna_sektor_map(df_display['sektor'])
         
@@ -184,7 +186,7 @@ def buat_area_struktur(df_aktif):
         st.info("📊 *[Grafik Tren Area Struktur Ekonomi belum dapat dimuat karena data kosong]*")
 
 def buat_scatter_sektoral(df_aktif, jenis_analisis):
-    if df_aktif.empty:
+    if df_aktif is None or df_aktif.empty:
         st.info(f"🎯 *[Grafik Scatter Plot {jenis_analisis} akan muncul otomatis setelah data sektoral provinsi termuat]*")
         return
 
@@ -260,17 +262,14 @@ with col_provinsi:
     provinsi_terpilih = st.selectbox("Pilih Wilayah Analisis:", list_provinsi)
 
 with col_tahun:
-    # Memilih tahun secara default ke tahun terbaru jika memungkinkan
     tahun_terpilih = st.selectbox("Tahun Analisis:", list(range(2011, 2027)), index=14)
 
 st.markdown("---")
 
-# Mengambil Data
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
 
-# Status Indikator
 st.markdown("#### 📊 Status Pemuatan Data Monitoring")
 status_makro, status_sektoral, status_struktur = st.columns(3)
 
@@ -295,9 +294,6 @@ def format_val(val, unit=""):
     if pd.isna(val) or val == "" or str(val).lower() == 'nan': return "-"
     return f"{val}{unit}"
 
-# ==========================================
-# TAMPILAN DASHBOARD
-# ==========================================
 st.header("1. KONDISI EKONOMI MAKRO DAERAH 38 PROVINSI")
 col_Grafik1, col_Grafik2 = st.columns(2)
 with col_Grafik1:
