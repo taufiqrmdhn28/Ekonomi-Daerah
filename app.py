@@ -382,9 +382,9 @@ buat_scatter_sektoral(df_sektoral_aktif, "Overlay")
 buat_scatter_sektoral(df_sektoral_aktif, "Shift Share")
 buat_scatter_sektoral(df_sektoral_aktif, "Tipologi Klassen")
 
-# ==========================================
-# URUTAN 4: INTERPRETASI DAN REKOMENDASI (INTEGRASI GEMINI AI)
-# ==========================================
+# ==============================================================================
+# Bagian 4: INTERPRETASI DAN REKOMENDASI (INTEGRASI GEMINI AI)
+# ==============================================================================
 st.markdown("---")
 st.header("4. INTERPRETASI DAN REKOMENDASI")
 
@@ -397,7 +397,7 @@ st.success(format_val(df_active_dict.get("rekomendasi_ekonomi_riil")))
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("#### 🧠 Tambahan Analisis Strategis Gemini AI (The Bappenas Way)")
 
-# Tombol pemicu pemanggilan API agar hemat token dan performa stabil
+# PASTIKAN BARIS DI BAWAH INI ADA DAN TIDAK TERPOTONG:
 if st.button("Hasilkan Sudut Pandang Gemini AI", type="primary"):
     if not df_active_dict:
         st.warning("Silakan pastikan data wilayah bermuatan valid terlebih dahulu sebelum memanggil AI.")
