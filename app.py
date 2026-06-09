@@ -3,29 +3,29 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import google.generativeai as genai
 import json
 import os
 
 st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="📍")
 
 # ==============================================================================
-# Bagian 0: KONFIGURASI GEMINI API KEY (JALUR VVIP - HARDCODED)
+# Bagian 0: KONFIGURASI GEMINI API KEY VIA STREAMLIT SECRETS (SECURE)
 # ==============================================================================
 try:
-    import google.generativeai as genai
-    # API Key langsung ditanam agar bebas dari isu Sinkronisasi Secrets
-    GEMINI_KEY = "AQ.Ab8RN6INWqpjiIYw5_s1c9hk3Q2erwvIBCVErTjynhKAYWRdQ"
-    genai.configure(api_key=GEMINI_KEY)
-    AI_READY = True
+    USER_API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=USER_API_KEY)
+    AI_TERKONFIGURASI = True
 except Exception as e:
-    AI_READY = False
-    st.error(f"Sistem AI gagal dimuat. Cek library: {e}")
+    AI_TERKONFIGURASI = False
+    st.warning("Catatan: GEMINI_API_KEY belum terdeteksi di Secrets Streamlit Cloud. Fitur AI dinonaktifkan sementara.")
 
 # ==============================================================================
 # Bagian 1: SMART DATA LOADER (Prioritas Utama: File Excel .xlsx)
 # ==============================================================================
 @st.cache_data
 def smart_load(filename_base):
+    """Mencari file dengan prioritas .xlsx, kemudian fallback ke .csv dengan Encoding Windows"""
     formats = ['.xlsx', '.csv']
     folders = ['', 'data/']
     
@@ -49,6 +49,7 @@ def smart_load(filename_base):
                 except Exception as e:
                     st.error(f"Gagal membaca file {path}: {e}")
                     return pd.DataFrame()
+                    
     return pd.DataFrame()
 
 def load_data_aman(provinsi, tahun):
@@ -275,10 +276,12 @@ with col_tahun:
 
 st.markdown("---")
 
+# Mengambil Data (Proses aman, mendukung Excel dan CSV secara dinamis)
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
 
+# Status Indikator Load Data
 st.markdown("#### 📊 Status Pemuatan Data Monitoring")
 status_makro, status_sektoral, status_struktur = st.columns(3)
 
@@ -401,10 +404,10 @@ st.success(format_val(df_active_dict.get("rekomendasi_ekonomi_riil")))
 st.markdown("<br>", unsafe_allow_html=True)
 st.markdown("#### 🧠 Tambahan Analisis Strategis Gemini AI (The Bappenas Way)")
 
-# === TOMBOL DIPAKSA RENDER TANPA ATRIBUT TYPE="PRIMARY" ===
-if st.button("✨ Hasilkan Analisis Gemini AI"):
-    if not AI_READY:
-        st.error("Sistem AI gagal dimuat. Pastikan library ter-install dengan benar.")
+# Tombol pemicu pemanggilan API
+if st.button("Hasilkan Sudut Pandang Gemini AI", type="primary"):
+    if not AI_TERKONFIGURASI:
+        st.error("Gagal mengeksekusi: Hubungan API terputus. Pastikan variabel GEMINI_API_KEY sudah disimpan dengan benar di Secrets Streamlit Cloud.")
     elif not df_active_dict:
         st.warning("Silakan pastikan data wilayah bermuatan valid terlebih dahulu sebelum memanggil AI.")
     else:
