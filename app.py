@@ -9,8 +9,8 @@ import os
 st.set_page_config(page_title="Ekonomi Makro Daerah", layout="wide", page_icon="📍")
 
 # ==============================================================================
-# Bagian 1: SMART DATA LOADER (Auto-Detect CSV / Excel)
-# ==========================================
+# Bagian 1: SMART DATA LOADER (Auto-Detect CSV / Excel & Multi-Separator)
+# ==============================================================================
 @st.cache_data
 def smart_load(filename_base):
     """Mencari file baik dalam format .csv maupun .xlsx di folder root maupun folder 'data'"""
@@ -24,21 +24,23 @@ def smart_load(filename_base):
                 try:
                     if fmt == '.csv':
                         try:
+                            # Percobaan 1: Separator Titik Koma
                             df = pd.read_csv(path, sep=";", engine='python')
-                            if len(df.columns) < 2: # Jika gagal baca sep=";" coba sep=","
+                            if len(df.columns) < 2: 
+                                # Percobaan 2: Separator Koma
                                 df = pd.read_csv(path, sep=",", engine='python')
                         except:
                             df = pd.read_csv(path, sep=",", engine='python')
                     else:
                         df = pd.read_excel(path)
                     
-                    # Bersihkan nama kolom
+                    # Bersihkan nama kolom dari spasi/huruf besar
                     df.columns = df.columns.astype(str).str.strip().str.lower()
                     return df
                 except Exception as e:
                     st.error(f"Gagal membaca file {path}: {e}")
                     return pd.DataFrame()
-    return pd.DataFrame() # Jika tidak ketemu
+    return pd.DataFrame() # Jika tidak ketemu di semua skenario
 
 def load_data_aman(provinsi, tahun):
     df_all = smart_load("data_ekonomi")
@@ -127,7 +129,7 @@ def buat_peta_klasifikasi(df_aktif):
     try:
         geojson_path = "data/indonesia_provinces.geojson" if os.path.exists("data/indonesia_provinces.geojson") else "indonesia_provinces.geojson"
         if not os.path.exists(geojson_path):
-            st.info("🗺️ *[File GeoJSON batas wilayah tidak ditemukan]*")
+            st.info("🗺️ *[File GeoJSON batas wilayah tidak ditemukan. Peta Spasial belum bisa dimuat.]*")
             return
         with open(geojson_path, "r") as f:
             geojson_indonesia = json.load(f)
@@ -154,7 +156,7 @@ def buat_line_growth(provinsi):
         df_raw['provinsi'] = df_raw['provinsi'].astype(str).str.strip()
         df_prov = df_raw[df_raw['provinsi'] == provinsi].sort_values(by="tahun")
         
-        # INI PERBAIKANNYA: Wajib pakai .empty !
+        # PERBAIKAN: Harus cek empty
         if df_prov.empty:
             st.warning(f"Data tren historis untuk {provinsi} tidak ditemukan.")
             return
@@ -168,8 +170,8 @@ def buat_line_growth(provinsi):
         
         fig.update_layout(xaxis=dict(dtick=1, type='category'), xaxis_title="Tahun", yaxis_title="Persentase (%)", margin={"r":10,"t":30,"l":10,"b":10}, legend_orientation="h")
         st.plotly_chart(fig, use_container_width=True)
-    except Exception:
-        st.error("Gagal memuat tren pertumbuhan makro historis.")
+    except Exception as e:
+        st.error(f"Gagal memuat tren pertumbuhan makro historis: {e}")
 
 def buat_area_struktur(df_aktif):
     if df_aktif is not None and not df_aktif.empty and 'sektor' in df_aktif.columns and 'kontribusi_sektor' in df_aktif.columns:
@@ -237,11 +239,10 @@ def buat_scatter_sektoral(df_aktif, jenis_analisis):
         st.markdown("**Deskripsi Pembagian Kuadran Sektor:**")
         st.markdown(kriteria_teks)
 
-
 # ==============================================================================
 # Bagian 3: UI DASHBOARD UTAMA
 # ==============================================================================
-st.title("🏛️ Dashboard Ekonomi Makro Daerah (Test Sandbox)")
+st.title("🏛️ Dashboard Ekonomi Makro Daerah")
 st.markdown("---")
 
 col_provinsi, col_tahun = st.columns(2)
@@ -262,20 +263,23 @@ with col_provinsi:
     provinsi_terpilih = st.selectbox("Pilih Wilayah Analisis:", list_provinsi)
 
 with col_tahun:
+    # Memilih tahun secara default ke tahun terbaru (2025/2026 tergantung data yang ada)
     tahun_terpilih = st.selectbox("Tahun Analisis:", list(range(2011, 2027)), index=14)
 
 st.markdown("---")
 
+# Mengambil Data (Proses aman, tidak akan crash meskipun CSV kosong/salah)
 df_all_prov = load_data_aman(provinsi_terpilih, tahun_terpilih) 
 df_sektoral_aktif = load_data_sektoral_aman(provinsi_terpilih)
 df_struktur_aktif = load_data_struktur_aman(provinsi_terpilih)
 
+# Status Indikator Load Data
 st.markdown("#### 📊 Status Pemuatan Data Monitoring")
 status_makro, status_sektoral, status_struktur = st.columns(3)
 
 with status_makro:
     if not df_all_prov.empty: st.success(f"✓ Data Makro ({len(df_all_prov)} Wilayah Terload)")
-    else: st.error(f"❌ Data Makro {tahun_terpilih} Kosong")
+    else: st.error(f"❌ Data Makro {tahun_terpilih} Kosong/Tidak Ditemukan")
 
 with status_sektoral:
     if not df_sektoral_aktif.empty: st.success(f"✓ Data Sektoral ({len(df_sektoral_aktif)} Sektor Terload)")
@@ -294,6 +298,9 @@ def format_val(val, unit=""):
     if pd.isna(val) or val == "" or str(val).lower() == 'nan': return "-"
     return f"{val}{unit}"
 
+# ==========================================
+# TAMPILAN DASHBOARD
+# ==========================================
 st.header("1. KONDISI EKONOMI MAKRO DAERAH 38 PROVINSI")
 col_Grafik1, col_Grafik2 = st.columns(2)
 with col_Grafik1:
